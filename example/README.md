@@ -1,9 +1,16 @@
-<img src="https://storage.googleapis.com/product-logos/logo_qr_flutter.png" align="center" width="200">
+# example
 
-This is the example project for the QR.Flutter library. It contains a simple example that you can modify / tweak to test the various options that the `qr_flutter` library exposes.
+A new Flutter project.
 
-# Running the app
+## Getting Started
 
-Simply run `flutter run` or open the project in your IDE of choice and give it a run!
+This project is a starting point for a Flutter application.
 
-Have fun!
+A few resources to get you started if this is your first Flutter project:
+
+- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
+- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+
+For help getting started with Flutter development, view the
+[online documentation](https://docs.flutter.dev/), which offers tutorials,
+samples, guidance on mobile development, and a full API reference.
