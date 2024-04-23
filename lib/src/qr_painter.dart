@@ -27,6 +27,57 @@ const Color _qrDefaultEmptyColor = Color(0x00ffffff);
 
 /// A [CustomPainter] object that you can use to paint a QR code.
 class QrPainter extends CustomPainter {
+  /// The QR code version.
+  final int version; // the qr code version
+
+  /// The error correction level of the QR code.
+  final int errorCorrectionLevel; // the qr code error correction level
+
+  /// The color of the squares.
+  @Deprecated('use colors in eyeStyle and dataModuleStyle instead')
+  final Color color;
+
+  /// The gradient for all (dataModuleShape, eyeShape, embeddedImageShape)
+  final Gradient? gradient;
+
+  /// The color of the non-squares (background).
+  @Deprecated(
+      'You should use the background color value of your container widget')
+  final Color emptyColor; // the other color
+
+  /// If set to false, the painter will leave a 1px gap between each of the
+  /// squares.
+  final bool gapless;
+
+  /// The image data to embed (as an overlay) in the QR code. The image will
+  /// be added to the center of the QR code.
+  final ui.Image? embeddedImage;
+
+  /// Styling options for the image overlay.
+  final QrEmbeddedImageStyle embeddedImageStyle;
+
+  /// Styling option for QR Eye ball and frame.
+  final QrEyeStyle eyeStyle;
+
+  /// Styling option for QR data module.
+  final QrDataModuleStyle dataModuleStyle;
+
+  /// The base QR code data
+  QrCode? _qr;
+
+  /// QR Image renderer
+  late QrImage _qrImage;
+
+  /// This is the version (after calculating) that we will use if the user has
+  /// requested the 'auto' version.
+  late final int _calcVersion;
+
+  /// The size of the 'gap' between the pixels
+  final double _gapSize = 0.25;
+
+  /// Cache for all of the [Paint] objects.
+  final PaintCache _paintCache = PaintCache();
+
   /// Create a new QRPainter with passed options (or defaults).
   QrPainter({
     required String data,
@@ -73,110 +124,6 @@ class QrPainter extends CustomPainter {
         errorCorrectionLevel = qr.errorCorrectLevel {
     _calcVersion = version;
     _initPaints();
-  }
-
-  /// The QR code version.
-  final int version; // the qr code version
-
-  /// The error correction level of the QR code.
-  final int errorCorrectionLevel; // the qr code error correction level
-
-  /// The color of the squares.
-  @Deprecated('use colors in eyeStyle and dataModuleStyle instead')
-  final Color color;
-
-  /// The gradient for all (dataModuleShape, eyeShape, embeddedImageShape)
-  final Gradient? gradient;
-
-  /// The color of the non-squares (background).
-  @Deprecated(
-      'You should use the background color value of your container widget')
-  final Color emptyColor; // the other color
-  /// If set to false, the painter will leave a 1px gap between each of the
-  /// squares.
-  final bool gapless;
-
-  /// The image data to embed (as an overlay) in the QR code. The image will
-  /// be added to the center of the QR code.
-  final ui.Image? embeddedImage;
-
-  /// Styling options for the image overlay.
-  final QrEmbeddedImageStyle embeddedImageStyle;
-
-  /// Styling option for QR Eye ball and frame.
-  final QrEyeStyle eyeStyle;
-
-  /// Styling option for QR data module.
-  final QrDataModuleStyle dataModuleStyle;
-
-  /// The base QR code data
-  QrCode? _qr;
-
-  /// QR Image renderer
-  late QrImage _qrImage;
-
-  /// This is the version (after calculating) that we will use if the user has
-  /// requested the 'auto' version.
-  late final int _calcVersion;
-
-  /// The size of the 'gap' between the pixels
-  final double _gapSize = 0.25;
-
-  /// Cache for all of the [Paint] objects.
-  final PaintCache _paintCache = PaintCache();
-
-  void _init(String data) {
-    if (!QrVersions.isSupportedVersion(version)) {
-      throw QrUnsupportedVersionException(version);
-    }
-    // configure and make the QR code data
-    final validationResult = QrValidator.validate(
-      data: data,
-      version: version,
-      errorCorrectionLevel: errorCorrectionLevel,
-    );
-    if (!validationResult.isValid) {
-      throw validationResult.error!;
-    }
-    _qr = validationResult.qrCode;
-    _calcVersion = _qr!.typeNumber;
-    _initPaints();
-  }
-
-  void _initPaints() {
-    // Initialize `QrImage` for rendering
-    _qrImage = QrImage(_qr!);
-    // Cache the pixel paint object. For now there is only one but we might
-    // expand it to multiple later (e.g.: different colours).
-    _paintCache.cache(
-      Paint()..style = PaintingStyle.fill,
-      QrCodeElement.codePixel,
-    );
-    // Cache the empty pixel paint object. Empty color is deprecated and will go
-    // away.
-    _paintCache.cache(
-      Paint()..style = PaintingStyle.fill,
-      QrCodeElement.codePixelEmpty,
-    );
-    // Cache the finder pattern painters. We'll keep one for each one in case
-    // we want to provide customization options later.
-    for (final position in FinderPatternPosition.values) {
-      _paintCache.cache(
-        Paint()..style = PaintingStyle.stroke,
-        QrCodeElement.finderPatternOuter,
-        position: position,
-      );
-      _paintCache.cache(
-        Paint()..style = PaintingStyle.stroke,
-        QrCodeElement.finderPatternInner,
-        position: position,
-      );
-      _paintCache.cache(
-        Paint()..style = PaintingStyle.fill,
-        QrCodeElement.finderPatternDot,
-        position: position,
-      );
-    }
   }
 
   @override
@@ -422,24 +369,41 @@ class QrPainter extends CustomPainter {
     }
   }
 
-  bool _isDarkOnSide(
-    int x,
-    int y,
-    Rect? safeAreaRect,
-    _PaintMetrics paintMetrics,
-    num gap,
-  ) {
-    final maxIndexPixel = _qrImage.moduleCount - 1;
+  @override
+  bool shouldRepaint(CustomPainter oldPainter) {
+    if (oldPainter is QrPainter) {
+      return errorCorrectionLevel != oldPainter.errorCorrectionLevel ||
+          _calcVersion != oldPainter._calcVersion ||
+          _qr != oldPainter._qr ||
+          gapless != oldPainter.gapless ||
+          embeddedImage != oldPainter.embeddedImage ||
+          embeddedImageStyle != oldPainter.embeddedImageStyle ||
+          eyeStyle != oldPainter.eyeStyle ||
+          dataModuleStyle != oldPainter.dataModuleStyle;
+    }
+    return true;
+  }
 
-    final xIsContains = x >= 0 && x <= maxIndexPixel;
-    final yIsContains = y >= 0 && y <= maxIndexPixel;
+  /// Returns the raw QR code [ui.Image] object.
+  Future<ui.Image> toImage(double size) {
+    return toPicture(size).toImage(size.toInt(), size.toInt());
+  }
 
-    return xIsContains && yIsContains
-        ? _qrImage.isDark(y, x) &&
-            !(safeAreaRect?.overlaps(
-                    _createDataModuleRect(paintMetrics, x, y, gap)) ??
-                false)
-        : false;
+  /// Returns the raw QR code image byte data.
+  Future<ByteData?> toImageData(
+    double size, {
+    ui.ImageByteFormat format = ui.ImageByteFormat.png,
+  }) async {
+    final image = await toImage(size);
+    return image.toByteData(format: format);
+  }
+
+  /// Returns a [ui.Picture] object containing the QR code data.
+  ui.Picture toPicture(double size) {
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    paint(canvas, Size(size, size));
+    return recorder.endRecording();
   }
 
   Rect _createDataModuleRect(
@@ -460,29 +424,6 @@ class QrPainter extends CustomPainter {
       paintMetrics.pixelSize + pixelHTweak,
       paintMetrics.pixelSize + pixelVTweak,
     );
-  }
-
-  bool _hasAdjacentVerticalPixel(int x, int y, int moduleCount) {
-    if (y + 1 >= moduleCount) {
-      return false;
-    }
-    return _qrImage.isDark(y + 1, x);
-  }
-
-  bool _hasAdjacentHorizontalPixel(int x, int y, int moduleCount) {
-    if (x + 1 >= moduleCount) {
-      return false;
-    }
-    return _qrImage.isDark(y, x + 1);
-  }
-
-  bool _isFinderPatternPosition(int x, int y) {
-    final isTopLeft = y < _finderPatternLimit && x < _finderPatternLimit;
-    final isBottomLeft = y < _finderPatternLimit &&
-        (x >= _qr!.moduleCount - _finderPatternLimit);
-    final isTopRight = y >= _qr!.moduleCount - _finderPatternLimit &&
-        (x < _finderPatternLimit);
-    return isTopLeft || isBottomLeft || isTopRight;
   }
 
   void _drawFinderPatternItem(
@@ -578,7 +519,147 @@ class QrPainter extends CustomPainter {
     }
   }
 
+  void _drawImageOverlay(
+    Canvas canvas,
+    Offset position,
+    Size size,
+    QrEmbeddedImageStyle? style,
+  ) {
+    final paint = Paint()
+      ..isAntiAlias = true
+      ..filterQuality = FilterQuality.high;
+
+    if (style != null) {
+      if (style.color != null) {
+        paint.colorFilter = ColorFilter.mode(Colors.black, BlendMode.srcATop);
+      }
+      if (style.shapeColor != null) {
+        paint.color = style.shapeColor!;
+      }
+    }
+    final srcSize = Size(
+      embeddedImage!.width.toDouble(),
+      embeddedImage!.height.toDouble(),
+    );
+    final src = Alignment.center.inscribe(srcSize, Offset.zero & srcSize);
+    final dst = Alignment.center.inscribe(size, position & size);
+    if (style != null && style.shapeSize != null) {
+      // debugPrint("${size.h}");
+      canvas.drawCircle(
+          Offset(
+            position.dx + (size.width / 2),
+            position.dy + (size.height / 2),
+          ),
+          style.shapeSize!.height,
+          paint);
+    }
+    canvas.drawImageRect(embeddedImage!, src, dst, paint);
+  }
+
+  bool _hasAdjacentHorizontalPixel(int x, int y, int moduleCount) {
+    if (x + 1 >= moduleCount) {
+      return false;
+    }
+    return _qrImage.isDark(y, x + 1);
+  }
+
+  bool _hasAdjacentVerticalPixel(int x, int y, int moduleCount) {
+    if (y + 1 >= moduleCount) {
+      return false;
+    }
+    return _qrImage.isDark(y + 1, x);
+  }
+
   bool _hasOneNonZeroSide(Size size) => size.longestSide > 0;
+
+  void _init(String data) {
+    if (!QrVersions.isSupportedVersion(version)) {
+      throw QrUnsupportedVersionException(version);
+    }
+    // configure and make the QR code data
+    final validationResult = QrValidator.validate(
+      data: data,
+      version: version,
+      errorCorrectionLevel: errorCorrectionLevel,
+    );
+    if (!validationResult.isValid) {
+      throw validationResult.error!;
+    }
+    _qr = validationResult.qrCode;
+    _calcVersion = _qr!.typeNumber;
+    _initPaints();
+  }
+
+  void _initPaints() {
+    // Initialize `QrImage` for rendering
+    _qrImage = QrImage(_qr!);
+    // Cache the pixel paint object. For now there is only one but we might
+    // expand it to multiple later (e.g.: different colours).
+    _paintCache.cache(
+      Paint()..style = PaintingStyle.fill,
+      QrCodeElement.codePixel,
+    );
+    // Cache the empty pixel paint object. Empty color is deprecated and will go
+    // away.
+    _paintCache.cache(
+      Paint()..style = PaintingStyle.fill,
+      QrCodeElement.codePixelEmpty,
+    );
+    // Cache the finder pattern painters. We'll keep one for each one in case
+    // we want to provide customization options later.
+    for (final position in FinderPatternPosition.values) {
+      _paintCache.cache(
+        Paint()..style = PaintingStyle.stroke,
+        QrCodeElement.finderPatternOuter,
+        position: position,
+      );
+      _paintCache.cache(
+        Paint()..style = PaintingStyle.stroke,
+        QrCodeElement.finderPatternInner,
+        position: position,
+      );
+      _paintCache.cache(
+        Paint()..style = PaintingStyle.fill,
+        QrCodeElement.finderPatternDot,
+        position: position,
+      );
+    }
+  }
+
+  bool _isDarkOnSide(
+    int x,
+    int y,
+    Rect? safeAreaRect,
+    _PaintMetrics paintMetrics,
+    num gap,
+  ) {
+    final maxIndexPixel = _qrImage.moduleCount - 1;
+
+    final xIsContains = x >= 0 && x <= maxIndexPixel;
+    final yIsContains = y >= 0 && y <= maxIndexPixel;
+
+    return xIsContains && yIsContains
+        ? _qrImage.isDark(y, x) &&
+            !(safeAreaRect?.overlaps(
+                    _createDataModuleRect(paintMetrics, x, y, gap)) ??
+                false)
+        : false;
+  }
+
+  bool _isFinderPatternPosition(int x, int y) {
+    final isTopLeft = y < _finderPatternLimit && x < _finderPatternLimit;
+    final isBottomLeft = y < _finderPatternLimit &&
+        (x >= _qr!.moduleCount - _finderPatternLimit);
+    final isTopRight = y >= _qr!.moduleCount - _finderPatternLimit &&
+        (x < _finderPatternLimit);
+    return isTopLeft || isBottomLeft || isTopRight;
+  }
+
+  /// if [gradient] != null, then only black [_qrDefaultColor],
+  /// needed for gradient
+  /// else [color] or [QrPainter.color]
+  Color _priorityColor(Color? color) =>
+      gradient != null ? _qrDefaultColor : color ?? this.color;
 
   Size _scaledAspectSize(
     Size widgetSize,
@@ -597,75 +678,18 @@ class QrPainter extends CustomPainter {
       return Size(ratio * originalSize.width, ratio * originalSize.height);
     }
   }
-
-  void _drawImageOverlay(
-    Canvas canvas,
-    Offset position,
-    Size size,
-    QrEmbeddedImageStyle? style,
-  ) {
-    final paint = Paint()
-      ..isAntiAlias = true
-      ..filterQuality = FilterQuality.high;
-    if (style != null) {
-      if (style.color != null) {
-        paint.colorFilter = ColorFilter.mode(style.color!, BlendMode.srcATop);
-      }
-    }
-    final srcSize = Size(
-      embeddedImage!.width.toDouble(),
-      embeddedImage!.height.toDouble(),
-    );
-    final src = Alignment.center.inscribe(srcSize, Offset.zero & srcSize);
-    final dst = Alignment.center.inscribe(size, position & size);
-    canvas.drawImageRect(embeddedImage!, src, dst, paint);
-  }
-
-  /// if [gradient] != null, then only black [_qrDefaultColor],
-  /// needed for gradient
-  /// else [color] or [QrPainter.color]
-  Color _priorityColor(Color? color) =>
-      gradient != null ? _qrDefaultColor : color ?? this.color;
-
-  @override
-  bool shouldRepaint(CustomPainter oldPainter) {
-    if (oldPainter is QrPainter) {
-      return errorCorrectionLevel != oldPainter.errorCorrectionLevel ||
-          _calcVersion != oldPainter._calcVersion ||
-          _qr != oldPainter._qr ||
-          gapless != oldPainter.gapless ||
-          embeddedImage != oldPainter.embeddedImage ||
-          embeddedImageStyle != oldPainter.embeddedImageStyle ||
-          eyeStyle != oldPainter.eyeStyle ||
-          dataModuleStyle != oldPainter.dataModuleStyle;
-    }
-    return true;
-  }
-
-  /// Returns a [ui.Picture] object containing the QR code data.
-  ui.Picture toPicture(double size) {
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder);
-    paint(canvas, Size(size, size));
-    return recorder.endRecording();
-  }
-
-  /// Returns the raw QR code [ui.Image] object.
-  Future<ui.Image> toImage(double size) {
-    return toPicture(size).toImage(size.toInt(), size.toInt());
-  }
-
-  /// Returns the raw QR code image byte data.
-  Future<ByteData?> toImageData(
-    double size, {
-    ui.ImageByteFormat format = ui.ImageByteFormat.png,
-  }) async {
-    final image = await toImage(size);
-    return image.toByteData(format: format);
-  }
 }
 
 class _PaintMetrics {
+  final int moduleCount;
+
+  final double containerSize;
+  final double gapSize;
+  late final double _pixelSize;
+
+  late final double _innerContentSize;
+  late final double _inset;
+
   _PaintMetrics({
     required this.containerSize,
     required this.gapSize,
@@ -673,19 +697,10 @@ class _PaintMetrics {
   }) {
     _calculateMetrics();
   }
-
-  final int moduleCount;
-  final double containerSize;
-  final double gapSize;
-
-  late final double _pixelSize;
-  double get pixelSize => _pixelSize;
-
-  late final double _innerContentSize;
   double get innerContentSize => _innerContentSize;
 
-  late final double _inset;
   double get inset => _inset;
+  double get pixelSize => _pixelSize;
 
   void _calculateMetrics() {
     final gapTotal = (moduleCount - 1) * gapSize;

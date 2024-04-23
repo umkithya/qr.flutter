@@ -159,6 +159,7 @@ class QrDataModuleStyle {
 class QrEmbeddedImageStyle {
   /// Create a new set of styling options.
   const QrEmbeddedImageStyle({
+    this.shapeSize, 
     this.size,
     this.color,
     this.safeArea = false,
@@ -172,6 +173,7 @@ class QrEmbeddedImageStyle {
   /// will be used to scale the zero dimension based on the original image
   /// size.
   final Size? size;
+  final Size? shapeSize;
 
   /// Color to tint the image.
   final Color? color;
